@@ -189,7 +189,8 @@ Normalised message written to Kafka:
 ### 5.3 Company News (REST) — used by News Agent
 
 **Source:** `GET https://finnhub.io/api/v1/company-news?symbol={symbol}&from={date}&to={date}`
-**Not yet ingested** — to be added for the News Agent.
+**Kafka topic:** `finnhub_news`
+**Poll interval:** every ~5 minutes per cycle (configurable via `NEWS_POLL_INTERVAL`)
 
 Response is an array of articles:
 
@@ -210,6 +211,22 @@ Response is an array of articles:
 - `summary` length and quality vary by source — some are one sentence, others a full paragraph.
 - `related` field may list additional tickers the article mentions, useful for cross-company impact detection.
 - No built-in sentiment label — sentiment must be inferred by LLM from `headline` + `summary`.
+
+Normalised message written to Kafka:
+
+| Field | Type | Derivation |
+|-------|------|------------|
+| `symbol` | string | Ticker queried |
+| `news_id` | int | Direct from `id` |
+| `headline` | string | Direct from `headline` |
+| `summary` | string | Direct from `summary` |
+| `source` | string | Direct from `source` |
+| `url` | string | Direct from `url` |
+| `category` | string | Direct from `category` |
+| `published_at` | ISO-8601 | `datetime` converted to UTC |
+| `related` | string | Direct from `related` |
+
+**Cassandra table:** `company_news` (TTL 7 days, partitioned by symbol, clustered by published_at DESC, news_id DESC).
 
 ### 5.4 News Sentiment (REST) — potential complement
 
@@ -238,6 +255,6 @@ Returns pre-computed aggregate sentiment for a company:
 |-------|--------|----------------|
 | Quote normalisation discards `d`, `dp`, `h`, `l`, `o`, `pc` | Analytics Agent lacks day-range and open/close context | Extend normalisation to preserve these fields |
 | Bid/ask is synthetic (0.02% spread) | Spread analytics are meaningless estimates | Acknowledge limitation; do not base recommendations on spread data |
-| No news ingestion yet | News Agent has no data | Add company-news fetcher to ingestion service |
+| ~~No news ingestion yet~~ | ~~News Agent has no data~~ | **Resolved** — company-news poller added to ingestion service, writes to `finnhub_news` topic and `company_news` table |
 | No market hours awareness | System processes stale/empty data off-hours | Consider adding market-hours gating or at least flagging |
 | Free-tier latency and rate limits | Data is delayed; quote polling is slow with many symbols | Keep symbol list small (3–5 tickers) |

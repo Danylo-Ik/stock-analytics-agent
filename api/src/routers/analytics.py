@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -93,42 +92,6 @@ def get_whale_impact(
         "positive_impact_count": positive,
         "negative_impact_count": negative,
         "trades":            [_fmt(r) for r in rows],
-    }
-
-
-@router.get("/api/spread/{symbol}")
-def get_spread_history(
-    symbol: str,
-    from_ts: Optional[str] = Query(None, alias="from"),
-    to_ts: Optional[str] = Query(None, alias="to"),
-):
-    symbol = symbol.upper()
-    try:
-        now = datetime.now(tz=timezone.utc)
-        ts_from = datetime.fromisoformat(from_ts) if from_ts else now - timedelta(hours=1)
-        ts_to = datetime.fromisoformat(to_ts) if to_ts else now
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    rows = execute(
-        """
-        SELECT symbol, window_start, avg_spread, min_spread,
-               max_spread, avg_spread_pct, sample_count
-        FROM spread_history
-        WHERE symbol = %s AND window_start >= %s AND window_start <= %s
-        """,
-        (symbol, ts_from, ts_to),
-    )
-
-    def _fmt(r):
-        return {**r, "window_start": r["window_start"].isoformat() if r["window_start"] else None}
-
-    return {
-        "symbol": symbol,
-        "from":   ts_from.isoformat(),
-        "to":     ts_to.isoformat(),
-        "count":  len(rows),
-        "spread": [_fmt(r) for r in rows],
     }
 
 

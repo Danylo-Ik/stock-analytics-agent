@@ -7,7 +7,7 @@ report of day behaviour, grouped by hour
 avg_trade_count — typical activity level
 avg_volume — typical volume
 avg_volatility — typical price std dev
-avg_spread_pct — typical bid-ask spread (from spread_history)
+avg_spread_pct — reserved (always null, spread_history removed)
 sample_days — how many days of data used
 """
 
@@ -74,19 +74,7 @@ def main():
         count("*").alias("sample_days"),
     )
 
-    spread_hist = read_table(spark, "spread_history")
-
-    if not spread_hist.rdd.isEmpty():
-        spread_by_hour = (
-            spread_hist
-            .withColumn("hour_of_day", hour(col("window_start")))
-            .groupBy("symbol", "hour_of_day")
-            .agg(avg("avg_spread_pct").alias("avg_spread_pct"))
-        )
-        patterns = patterns.join(spread_by_hour, on=["symbol", "hour_of_day"], how="left")
-    else:
-        from pyspark.sql.functions import lit as flit
-        patterns = patterns.withColumn("avg_spread_pct", flit(None).cast("double"))
+    patterns = patterns.withColumn("avg_spread_pct", lit(None).cast("double"))
 
     from pyspark.sql.functions import current_timestamp
     patterns = (

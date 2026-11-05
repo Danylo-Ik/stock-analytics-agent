@@ -1,6 +1,7 @@
 """
-Finnhub WebSocket  -> trade events -> Kafka trades-raw
-Finnhub REST poller -> quote snapshots -> Kafka quotes-raw
+Finnhub WebSocket   -> trade events     -> Kafka finnhub_trades
+Finnhub REST poller -> quote snapshots  -> Kafka finnhub_quotes
+Finnhub REST poller -> company news     -> Kafka finnhub_news
 """
 
 import logging
@@ -27,6 +28,7 @@ def main():
     symbols = [s.strip() for s in os.environ.get("SYMBOLS", "AAPL,MSFT").split(",")]
     bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
     poll_interval = int(os.environ.get("QUOTE_POLL_INTERVAL", "5"))
+    news_poll_interval = int(os.environ.get("NEWS_POLL_INTERVAL", "300"))
 
     logger.info("Starting ingestion for symbols: %s", symbols)
 
@@ -36,6 +38,7 @@ def main():
         symbols=symbols,
         producer=producer,
         quote_poll_interval=poll_interval,
+        news_poll_interval=news_poll_interval,
     )
 
     def _shutdown(signum, frame):
@@ -50,6 +53,11 @@ def main():
         target=client.run_quote_poller, name="quote-poller", daemon=True
     )
     quote_thread.start()
+
+    news_thread = threading.Thread(
+        target=client.run_news_poller, name="news-poller", daemon=True
+    )
+    news_thread.start()
 
     client.run_websocket()
     producer.close()

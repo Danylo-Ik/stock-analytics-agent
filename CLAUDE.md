@@ -18,7 +18,7 @@ When making changes, consider which CRISP-DM phase the work falls under. Evaluat
 
 Stock price awareness assistant that ingests real-time US market data from Finnhub, analyses price trends via a periodic **Analytics Agent**, retrieves and interprets relevant news via a **News Agent**, and combines both signals into buy/hold/sell recommendations. Served through a FastAPI REST API. All services run in Docker.
 
-The system is being narrowed from a broader real-time analytics platform to focus specifically on the two-agent recommendation pipeline. Some existing Spark streaming jobs may be removed or simplified as the scope tightens.
+The system has been narrowed from a broader real-time analytics platform to focus on the two-agent recommendation pipeline. Spread and volatility streaming jobs have been removed; whale alert and market momentum remain.
 
 ## Commands
 
@@ -64,12 +64,10 @@ http://localhost:8000/docs
 
 ### Services (Docker Compose)
 
-- **ingestion** — Python service with two threads: a WebSocket client for live trades (`finnhub_trades` topic) and a REST poller for quotes every 5s (`finnhub_quotes` topic). Reconnects with exponential backoff.
-- **streaming** — Four Spark Structured Streaming jobs launched by `run_jobs.sh` with staggered start offsets:
-  - `whale_alert.py` — detects trades above 95th percentile volume (30s trigger)
-  - `volatility_monitor.py` — tracks 5-min price volatility, alerts on 2x spikes (60s trigger)
+- **ingestion** — Python service with three threads: a WebSocket client for live trades (`finnhub_trades` topic), a REST poller for quotes every 5s (`finnhub_quotes` topic), and a REST poller for company news every 5min (`finnhub_news` topic). Reconnects with exponential backoff.
+- **streaming** — Two Spark Structured Streaming jobs launched by `run_jobs.sh`:
+  - `whale_alert.py` — detects trades above 95th percentile volume over 60-min window (10-min trigger)
   - `market_momentum.py` — 1-min price momentum snapshots (60s trigger)
-  - `spread_monitor.py` — bid-ask spread tracking
 - **batch** — APScheduler running three Spark batch jobs:
   - `hourly_report.py` at `:00` — hourly OHLCV summaries
   - `trading_patterns.py` at `:30` — hour-of-day pattern analysis
@@ -80,15 +78,14 @@ http://localhost:8000/docs
 
 | Topic | Producer | Consumer |
 |-------|----------|----------|
-| `finnhub_trades` | Ingestion (WebSocket) | All 4 streaming jobs |
-| `finnhub_quotes` | Ingestion (REST poller) | Spread monitor |
+| `finnhub_trades` | Ingestion (WebSocket) | Whale alert, Market momentum |
+| `finnhub_quotes` | Ingestion (REST poller) | — |
+| `finnhub_news` | Ingestion (REST poller) | — |
 | `alerts_whale_trades` | Whale alert job | — |
-| `alerts_volatility` | Volatility monitor | — |
-| `alerts_spread` | Spread monitor | — |
 
 ### Cassandra (keyspace: `market_analytics`)
 
-Raw data tables (`trades`, `quotes`) have 7-day TTL. Streaming results (`whale_alerts`, `volatility_alerts`, `volatility_windows`, `market_momentum`, `spread_history`) have TTLs ranging from 1 hour to 30 days. Batch results (`hourly_reports`, `trading_patterns`, `large_trades_analysis`) have no TTL. Schema defined in `infra/cassandra/init.cql`.
+Raw data tables (`trades`, `quotes`) have 7-day TTL. Streaming results (`whale_alerts`, `market_momentum`) have TTLs of 30 days and 1 day respectively. `company_news` has 7-day TTL. Batch results (`hourly_reports`, `trading_patterns`, `large_trades_analysis`) have no TTL. Schema defined in `infra/cassandra/init.cql`.
 
 ### Service startup order
 
@@ -100,7 +97,8 @@ Configured in `.env` at project root. Key variables:
 - `FINNHUB_API_KEY` — required, Finnhub API token
 - `SYMBOLS` — comma-separated stock tickers (e.g., `AAPL,MSFT,NVDA`)
 - `KAFKA_BOOTSTRAP_SERVERS`, `CASSANDRA_HOST`, `CASSANDRA_KEYSPACE` — infrastructure addresses
-- `WHALE_PERCENTILE`, `VOLATILITY_WINDOW_MINUTES`, `SPREAD_ALERT_MULTIPLIER` — tunable alert thresholds
+- `WHALE_ALERT_TRIGGER_SECS` — whale alert trigger interval (default 600)
+- `NEWS_POLL_INTERVAL` — news polling interval in seconds (default 300)
 
 ## Finnhub Data Formats
 
@@ -115,9 +113,10 @@ Normalised by `ingestion/src/finnhub_client.py:_fetch_quote`:
 `{ symbol, bid, ask, bid_size, ask_size, spread, spread_pct, timestamp }`
 **Known issue:** only the `c` (current price) field is used from Finnhub; `d`, `dp`, `h`, `l`, `o`, `pc` are discarded. Bid/ask is synthetic (0.02% spread). These extra fields need to be preserved for the Analytics Agent.
 
-### Company news (REST, not yet ingested)
-`GET /api/v1/company-news?symbol={sym}&from={date}&to={date}` returns:
-`[{ id, headline, summary, source, url, image, category, datetime (UNIX), related }]`
+### Company news (REST polling → `finnhub_news` Kafka topic)
+Normalised by `ingestion/src/finnhub_client.py:_normalise_news`:
+`{ symbol, news_id, headline, summary, source, url, category, published_at (ISO-8601), related }`
+Polled every 5 minutes (configurable). Deduplication by `news_id`. Stored in `company_news` Cassandra table.
 No sentiment label — the News Agent must infer sentiment from headline + summary via LLM.
 
 ### News sentiment (REST, optional complement)

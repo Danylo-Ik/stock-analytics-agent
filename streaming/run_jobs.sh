@@ -19,12 +19,6 @@ echo "Submitting streaming jobs..."
 $SUBMIT /app/src/whale_alert.py &
 sleep 30
 
-$SUBMIT /app/src/volatility_monitor.py &
-sleep 15
-
 $SUBMIT /app/src/market_momentum.py &
-sleep 15
-
-$SUBMIT /app/src/spread_monitor.py &
 
 wait

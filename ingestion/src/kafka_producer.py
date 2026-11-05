@@ -34,6 +34,9 @@ class StockKafkaProducer:
     def send_quote(self, quote: dict):
         self.producer.send("finnhub_quotes", value=quote)
 
+    def send_news(self, article: dict):
+        self.producer.send("finnhub_news", value=article)
+
     def close(self):
         if self.producer:
             logger.info("Flushing and closing Kafka producer.")

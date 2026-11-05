@@ -19,17 +19,6 @@ TRADE_SCHEMA = StructType([
     StructField("is_dark_pool", BooleanType(),           nullable=True),
 ])
 
-QUOTE_SCHEMA = StructType([
-    StructField("symbol",     StringType(), nullable=False),
-    StructField("bid",        DoubleType(), nullable=True),
-    StructField("ask",        DoubleType(), nullable=True),
-    StructField("bid_size",   LongType(),   nullable=True),
-    StructField("ask_size",   LongType(),   nullable=True),
-    StructField("spread",     DoubleType(), nullable=True),
-    StructField("spread_pct", DoubleType(), nullable=True),
-    StructField("timestamp",  StringType(), nullable=False),
-])
-
 KEYSPACE = "market_analytics"
 
 

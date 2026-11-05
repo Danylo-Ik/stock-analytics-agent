@@ -4,7 +4,6 @@ Stock Analytics Platform - REST API
   Ad-hoc queries
     GET /api/price/{symbol}?from=&to=&interval=1m|5m|1h
     GET /api/trades?symbol=&min_size=&dark_pool=&from=&to=&limit=
-    GET /api/spread/{symbol}?from=&to=
     GET /api/momentum?symbol=&limit=
 
   Batch reports
@@ -16,7 +15,6 @@ Stock Analytics Platform - REST API
 
   Alerts (streaming-generated)
     GET /api/alerts/whale?symbol=&limit=&hours=
-    GET /api/alerts/volatility?symbol=&limit=&hours=
 
   Health
     GET /health

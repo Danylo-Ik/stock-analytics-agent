@@ -62,41 +62,19 @@ CREATE TABLE IF NOT EXISTS whale_alerts (
 ) WITH CLUSTERING ORDER BY (alert_time DESC)
   AND default_time_to_live = 2592000;
 
--- ── Streaming alerts: Volatility Alerts ───────────────────────────────────
-CREATE TABLE IF NOT EXISTS volatility_alerts (
-    symbol               TEXT,
-    alert_time           TIMESTAMP,
-    window_start         TIMESTAMP,
-    current_volatility   DOUBLE,
-    previous_volatility  DOUBLE,
-    ratio                DOUBLE,
-    price                DOUBLE,
-    PRIMARY KEY ((symbol), alert_time)
-) WITH CLUSTERING ORDER BY (alert_time DESC)
-  AND default_time_to_live = 2592000;
-
--- ── Streaming: Volatility Windows ──────────────────
-CREATE TABLE IF NOT EXISTS volatility_windows (
+-- ── Company News ─────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS company_news (
     symbol       TEXT,
-    window_start TIMESTAMP,
-    volatility   DOUBLE,
-    avg_price    DOUBLE,
-    trade_count  INT,
-    PRIMARY KEY ((symbol), window_start)
-) WITH CLUSTERING ORDER BY (window_start DESC)
-  AND default_time_to_live = 3600;
-
--- ── Streaming: Spread history ───────────────────────
-CREATE TABLE IF NOT EXISTS spread_history (
-    symbol         TEXT,
-    window_start   TIMESTAMP,
-    avg_spread     DOUBLE,
-    min_spread     DOUBLE,
-    max_spread     DOUBLE,
-    avg_spread_pct DOUBLE,
-    sample_count   INT,
-    PRIMARY KEY ((symbol), window_start)
-) WITH CLUSTERING ORDER BY (window_start DESC)
+    published_at TIMESTAMP,
+    news_id      BIGINT,
+    headline     TEXT,
+    summary      TEXT,
+    source       TEXT,
+    url          TEXT,
+    category     TEXT,
+    related      TEXT,
+    PRIMARY KEY ((symbol), published_at, news_id)
+) WITH CLUSTERING ORDER BY (published_at DESC, news_id DESC)
   AND default_time_to_live = 604800;
 
 -- ── Batch: Hourly Trading Report ──────────────────────────────────────────

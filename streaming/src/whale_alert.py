@@ -1,7 +1,7 @@
 """
 Streaming Job A1 - Whale Alert
 
-Every 30 seconds, for each symbol compute the 95th percentile of trade volumes over the last 10 minutes.
+Every 10 minutes, for each symbol compute the 95th percentile of trade volumes over the last 60 minutes.
 An alert happens when a new trade has volume > 95th percentile of recent trades.
 
 Result saved to cassandra whale_alerts table and also published to alerts_whale_trades Kafka topic.
@@ -28,8 +28,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("whale_alert")
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-TRIGGER_SECS    = int(os.getenv("WHALE_ALERT_TRIGGER_SECS", "30"))
-WINDOW_MINUTES  = 10
+TRIGGER_SECS    = int(os.getenv("WHALE_ALERT_TRIGGER_SECS", "600"))
+WINDOW_MINUTES  = 60
 MIN_SAMPLE      = 20
 
 

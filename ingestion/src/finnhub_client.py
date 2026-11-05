@@ -2,7 +2,8 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 import requests
@@ -25,13 +26,17 @@ class FinnhubClient:
         symbols: List[str],
         producer: StockKafkaProducer,
         quote_poll_interval: int = 5,
+        news_poll_interval: int = 300,
     ):
         self.api_key = api_key
         self.symbols = symbols
         self.producer = producer
         self.quote_poll_interval = quote_poll_interval
+        self.news_poll_interval = news_poll_interval
         self._ws: websocket.WebSocketApp | None = None
         self._stop_event = threading.Event()
+        self._seen_news_ids: dict[str, set[int]] = defaultdict(set)
+        self._max_seen_per_symbol = 1000
 
 
     def _on_open(self, ws):
@@ -153,6 +158,81 @@ class FinnhubClient:
                 if quote:
                     self.producer.send_quote(quote)
                 time.sleep(min_gap)
+
+    def _fetch_company_news(self, symbol: str) -> list[dict]:
+        today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(tz=timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        try:
+            resp = requests.get(
+                f"{FINNHUB_REST_URL}/company-news",
+                params={
+                    "symbol": symbol,
+                    "from": yesterday,
+                    "to": today,
+                    "token": self.api_key,
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as exc:
+            logger.warning("News fetch failed for %s: %s", symbol, exc)
+            return []
+
+    @staticmethod
+    def _normalise_news(symbol: str, article: dict) -> dict | None:
+        try:
+            return {
+                "symbol": symbol,
+                "news_id": int(article["id"]),
+                "headline": article.get("headline", ""),
+                "summary": article.get("summary", ""),
+                "source": article.get("source", ""),
+                "url": article.get("url", ""),
+                "category": article.get("category", ""),
+                "published_at": datetime.fromtimestamp(
+                    article["datetime"], tz=timezone.utc
+                ).isoformat(),
+                "related": article.get("related", ""),
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.debug("Could not normalise article %s: %s", article, exc)
+            return None
+
+    def run_news_poller(self):
+        logger.info(
+            "News poller started: %d symbols, %ds interval",
+            len(self.symbols),
+            self.news_poll_interval,
+        )
+        while not self._stop_event.is_set():
+            for symbol in self.symbols:
+                if self._stop_event.is_set():
+                    break
+                articles = self._fetch_company_news(symbol)
+                new_count = 0
+                for article in articles:
+                    news_id = article.get("id")
+                    if news_id is None:
+                        continue
+                    if news_id in self._seen_news_ids[symbol]:
+                        continue
+                    normalised = self._normalise_news(symbol, article)
+                    if normalised:
+                        self.producer.send_news(normalised)
+                        self._seen_news_ids[symbol].add(news_id)
+                        new_count += 1
+                # Bound the seen set
+                if len(self._seen_news_ids[symbol]) > self._max_seen_per_symbol:
+                    excess = len(self._seen_news_ids[symbol]) - self._max_seen_per_symbol
+                    self._seen_news_ids[symbol] = set(
+                        list(self._seen_news_ids[symbol])[excess:]
+                    )
+                if new_count:
+                    logger.info("News poll %s: %d new articles", symbol, new_count)
+                # Small delay between symbols to respect rate limits
+                time.sleep(1)
+            self._stop_event.wait(self.news_poll_interval)
 
     def stop(self):
         self._stop_event.set()
